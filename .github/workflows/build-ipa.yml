@@ -1,0 +1,98 @@
+
+name: Build Hello World IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Create Hello World app
+        run: |
+          mkdir -p HelloWorld
+
+          cat > HelloWorld/HelloWorldApp.swift <<'EOF'
+          import SwiftUI
+
+          @main
+          struct HelloWorldApp: App {
+              var body: some Scene {
+                  WindowGroup {
+                      ContentView()
+                  }
+              }
+          }
+          EOF
+
+          cat > HelloWorld/ContentView.swift <<'EOF'
+          import SwiftUI
+
+          struct ContentView: View {
+              var body: some View {
+                  Text("Hello World")
+                      .font(.largeTitle)
+                      .foregroundStyle(.black)
+                      .frame(maxWidth: .infinity, maxHeight: .infinity)
+                      .background(.white)
+              }
+          }
+          EOF
+
+          cat > project.yml <<'EOF'
+          name: HelloWorld
+          options:
+            bundleIdPrefix: com.example
+            deploymentTarget:
+              iOS: "16.0"
+          targets:
+            HelloWorld:
+              type: application
+              platform: iOS
+              sources:
+                - HelloWorld
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.example.HelloWorld
+                  GENERATE_INFOPLIST_FILE: YES
+                  INFOPLIST_KEY_CFBundleDisplayName: Hello World
+                  SWIFT_VERSION: "5.0"
+                  TARGETED_DEVICE_FAMILY: "1,2"
+          EOF
+
+          xcodegen generate
+
+      - name: Build iOS app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project HelloWorld.xcodeproj \
+            -scheme HelloWorld \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/HelloWorld.app Payload/
+          /usr/bin/zip -qry HelloWorld-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HelloWorld-unsigned-IPA
+          path: HelloWorld-unsigned.ipa
